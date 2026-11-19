@@ -25,6 +25,7 @@ boolean array.
 from __future__ import annotations
 
 import numpy as np
+from scipy.optimize import brentq
 from scipy.special import ndtr
 
 _INV_SQRT_2PI = 1.0 / np.sqrt(2.0 * np.pi)
@@ -124,3 +125,23 @@ def greeks(S, K, T, rd, rf, sigma, is_call=True):
         "vanna": vanna(*args),
         "volga": volga(*args),
     }
+
+
+def _implied_vol_scalar(target, S, K, T, rd, rf, is_call, lo, hi):
+    f = lambda v: float(price(S, K, T, rd, rf, v, is_call)) - target
+    if not (f(lo) < 0.0 < f(hi)):
+        return np.nan  # price outside the arbitrage-free range for [lo, hi]
+    return brentq(f, lo, hi, xtol=1e-14, rtol=4 * np.finfo(float).eps, maxiter=200)
+
+
+_implied_vol_vec = np.vectorize(_implied_vol_scalar, otypes=[float])
+
+
+def implied_vol(value, S, K, T, rd, rf, is_call=True, lo=1e-4, hi=5.0):
+    """Invert :func:`price` for sigma. Returns NaN where no vol in [lo, hi] reproduces ``value``.
+
+    Deep in-the-money prices carry almost no vol information; invert the OTM option
+    (put-call parity converts) when accuracy matters.
+    """
+    out = _implied_vol_vec(value, S, K, T, rd, rf, is_call, lo, hi)
+    return out if out.ndim else float(out)

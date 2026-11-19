@@ -144,3 +144,19 @@ def test_invalid_inputs_raise(bad):
     args.update(bad)
     with pytest.raises(ValueError):
         gk.price(args["S"], args["K"], args["T"], args["rd"], args["rf"], args["sigma"])
+
+
+def test_implied_vol_round_trip(case):
+    S, K, T, rd, rf, vol, is_call = case
+    # invert the OTM option, where price carries vol information
+    F = gk.forward(S, T, rd, rf)
+    otm_call = K >= F
+    v = gk.price(S, K, T, rd, rf, vol, otm_call)
+    if v < 1e-12:
+        pytest.skip("price too small to carry vol information")
+    assert gk.implied_vol(v, S, K, T, rd, rf, otm_call) == pytest.approx(vol, rel=1e-9)
+
+
+def test_implied_vol_nan_outside_no_arbitrage_range():
+    assert np.isnan(gk.implied_vol(-1e-3, 1.1, 1.1, 1.0, 0.03, 0.01, True))
+    assert np.isnan(gk.implied_vol(10.0, 1.1, 1.1, 1.0, 0.03, 0.01, True))
