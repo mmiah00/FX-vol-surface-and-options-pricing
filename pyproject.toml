@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fxvol"
+version = "0.1.0"
+description = "FX vol surface construction and Garman-Kohlhagen option pricing"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy"]
+
+[project.optional-dependencies]
+dev = ["pytest", "QuantLib"]
+
+[tool.setuptools]
+packages = ["fxvol"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
