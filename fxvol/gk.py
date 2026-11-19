@@ -25,7 +25,6 @@ boolean array.
 from __future__ import annotations
 
 import numpy as np
-from scipy.optimize import brentq
 from scipy.special import ndtr
 
 _INV_SQRT_2PI = 1.0 / np.sqrt(2.0 * np.pi)
@@ -127,21 +126,34 @@ def greeks(S, K, T, rd, rf, sigma, is_call=True):
     }
 
 
-def _implied_vol_scalar(target, S, K, T, rd, rf, is_call, lo, hi):
-    f = lambda v: float(price(S, K, T, rd, rf, v, is_call)) - target
-    if not (f(lo) < 0.0 < f(hi)):
-        return np.nan  # price outside the arbitrage-free range for [lo, hi]
-    return brentq(f, lo, hi, xtol=1e-14, rtol=4 * np.finfo(float).eps, maxiter=200)
+def _bisect(f, lo, hi, shape, iters=100):
+    """Vectorised bisection for an increasing ``f`` with a sign change on [lo, hi].
 
-
-_implied_vol_vec = np.vectorize(_implied_vol_scalar, otypes=[float])
+    Returns the bracket midpoint, and a validity mask for entries where ``f(lo) < 0 < f(hi)``.
+    """
+    a = np.full(shape, float(lo))
+    b = np.full(shape, float(hi))
+    valid = (f(a) < 0.0) & (f(b) > 0.0)
+    for _ in range(iters):
+        mid = 0.5 * (a + b)
+        neg = f(mid) < 0.0
+        a = np.where(neg, mid, a)
+        b = np.where(neg, b, mid)
+        if np.max(b - a) < 1e-15:
+            break
+    return 0.5 * (a + b), valid
 
 
 def implied_vol(value, S, K, T, rd, rf, is_call=True, lo=1e-4, hi=5.0):
     """Invert :func:`price` for sigma. Returns NaN where no vol in [lo, hi] reproduces ``value``.
 
+    Vectorised bisection (the price is increasing in sigma), accurate to ~1e-15 in sigma.
     Deep in-the-money prices carry almost no vol information; invert the OTM option
     (put-call parity converts) when accuracy matters.
     """
-    out = _implied_vol_vec(value, S, K, T, rd, rf, is_call, lo, hi)
+    value, S, K, T, rd, rf, is_call = np.broadcast_arrays(value, S, K, T, rd, rf, is_call)
+    value = value.astype(float)
+    f = lambda v: price(S, K, T, rd, rf, v, is_call) - value
+    out, valid = _bisect(f, lo, hi, value.shape)
+    out = np.where(valid, out, np.nan)
     return out if out.ndim else float(out)

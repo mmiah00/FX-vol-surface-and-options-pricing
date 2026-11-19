@@ -53,3 +53,29 @@ smile.vol(1.12); smile.vol_at_delta(-0.10)
   ATM-vol Black prices, inverted back to vols (NaN where no implied vol exists).
 - `python scripts/plot_smiles.py` writes `figures/smile_models.png` and `figures/rr_bf_intuition.png`
   (**synthetic quotes**, labelled as such on the plots).
+
+
+## Stage 3: full surface and arbitrage checks (`fxvol/surface.py`, `fxvol/arbitrage.py`)
+
+Five pillars (1W, 1M, 3M, 6M, 1Y), each with its own `rd`/`rf` and a per-tenor smile (Malz or Vanna-Volga),
+joined by **linear interpolation in total variance** `w = sigma^2 T`.
+
+```python
+from fxvol.synthetic import eurusd_like          # SYNTHETIC quotes, see fxvol/synthetic.py
+from fxvol.arbitrage import check_surface
+s = eurusd_like()
+s.vol(K=1.12, T=0.4); s.vol_at_delta(-0.25, T=0.4)
+print(check_surface(s).summary())
+```
+
+- **Interpolation coordinate:** fixed log forward-moneyness `k = ln(K/F_T)`, not fixed strike. The
+  no-calendar-arbitrage condition lives in `k`; with carry the forward drifts, so fixed strike is a different
+  moneyness at each tenor. Outside the pillars the vol is held flat at fixed `k`.
+- **Butterfly (density >= 0)**, two independent detectors that must agree: Gatheral's `g(k)` (from finite
+  differences of `w`) and the model-free price butterfly `C(K-h) - 2C(K) + C(K+h)`.
+- **Calendar (total variance non-decreasing in T)**, reported both at fixed `k` and at fixed strike.
+- Violations carry their location (maturity, `k`, strike, delta); points where a model has no vol (NaN) are
+  counted separately, never silently passed.
+- `python scripts/surface_demo.py` prints the reports and writes `figures/surface_clean.png`,
+  `arb_butterfly.png`, `arb_calendar.png`, `calendar_coordinates.png`. Results are written up in
+  [findings.md](findings.md).

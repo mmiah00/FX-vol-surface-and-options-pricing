@@ -207,14 +207,12 @@ class MalzSmile(Smile):
         d1, _ = d1_d2(q.S, K, q.T, q.rd, q.rf, sigma)
         return ndtr(d1)
 
-    def _solve_one(self, K, lo=1e-4, hi=5.0):
-        f = lambda s: s - np.polyval(self.coeffs, self._x(K, s))
-        if not (f(lo) < 0.0 < f(hi)):
-            return np.nan
-        return brentq(f, lo, hi, xtol=1e-14, rtol=4 * np.finfo(float).eps)
-
     def vol(self, K):
-        return _scalarize(np.vectorize(self._solve_one, otypes=[float])(K))
+        """Solve ``sigma = q(N(d1(K, sigma)))`` for every strike at once (NaN if no root in [1e-4, 5])."""
+        K = np.asarray(K, dtype=float)
+        f = lambda s: s - np.polyval(self.coeffs, self._x(K, s))
+        out, valid = gk._bisect(f, 1e-4, 5.0, K.shape)
+        return _scalarize(np.where(valid, out, np.nan))
 
     def vol_at_delta(self, delta):
         # Premium-excluded conventions give x explicitly, so skip the fixed point.
