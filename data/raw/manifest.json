@@ -1,0 +1,42 @@
+[
+  {
+    "file": "fred_DEXUSEU.csv",
+    "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXUSEU",
+    "retrieved_utc": "2026-11-19T21:35:14+00:00",
+    "bytes": 129193,
+    "sha256": "cabc808213f550bb92e70ce8742fe476127f0eae52c5063c4ca3b6419d87301b",
+    "rows": 7270
+  },
+  {
+    "file": "fred_SOFR.csv",
+    "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SOFR",
+    "retrieved_utc": "2026-11-19T21:35:15+00:00",
+    "bytes": 35666,
+    "sha256": "270214626688419b6d5ab2f5970efcd557770382cbc04f11c30ef13e617dcc99",
+    "rows": 2252
+  },
+  {
+    "file": "fred_EVZCLS.csv",
+    "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=EVZCLS",
+    "retrieved_utc": "2026-11-19T21:35:15+00:00",
+    "bytes": 73425,
+    "sha256": "63989d41d502661e9f7bc9276af6a33124d0d71ca0057214affb99725b75c420",
+    "rows": 4529
+  },
+  {
+    "file": "ecb_ESTR.csv",
+    "url": "https://data-api.ecb.europa.eu/service/data/EST/B.EU000A2X2A25.WT?format=csvdata&startPeriod=2019-10-01",
+    "retrieved_utc": "2026-11-19T21:35:18+00:00",
+    "bytes": 567545,
+    "sha256": "80db93611615eb7b20c1e75cd629e1cbf6b3891c2917861e8e5c9a05729a8145",
+    "rows": 1828
+  },
+  {
+    "file": "fred_ECBESTR_crosscheck.csv",
+    "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=ECBESTRVOLWGTTRMDMNRT",
+    "retrieved_utc": "2026-11-19T21:35:18+00:00",
+    "bytes": 32265,
+    "sha256": "72fa1c963e0b0d591f36fc22c9990a8bd9543b0f03caf3dcab4c50d1c6f272fa",
+    "rows": 1861
+  }
+]

@@ -129,3 +129,102 @@ interval, the region where that tenor's options have non-negligible value.
 - Rates are synthetic and interpolated on integrated rates; no discount-curve bootstrap.
 - No external reference surface was available, so detector correctness rests on the internal cross-checks above (two independent butterfly methods, analytic limits, zero-carry agreement).
 - Arbitrage checks are static and finite-grid: a clean report means no violation was found on the grid, not a proof.
+
+
+---
+
+# Stage 4: data
+
+Sample: **2019-10-02 to 2025-03-11, 1,352 daily rows**. Spot, rates and EVZ are real; RR, BF and the term-structure shape are assumed
+(see the README table). Reproduce with `python scripts/fetch_data.py` then `python -I scripts/build_dataset.py`.
+
+## What constrained the sample
+
+| Series | Coverage | Observations | Blank |
+|--------|----------|-------------:|------:|
+| EUR/USD (FRED DEXUSEU) | 1999-01-04 to 2026-11-13 | 6,988 | 282 |
+| EVZ (FRED EVZCLS) | 2007-11-01 to **2025-03-11** | 4,360 | 169 |
+| SOFR (FRED) | 2018-04-03 to 2026-11-18 | 2,155 | 97 |
+| EUR STR (ECB) | **2019-10-01** to 2026-11-18 | 1,828 | 0 |
+
+- The window is the intersection: it starts when the EUR STR starts and ends when EVZ ends. Spot and both rates run to November 2026, but there is no EVZ after 2025-03-11, and forward-filling about 20 months of implied vol would have fabricated it.
+- CBOE's own EVZ history (`cdn.cboe.com`) returned HTTP 403. I did not try to get around that, so EVZ could not be extended or cross-checked against a second source.
+- Date joins dropped 2,674 dates with spot but no EVZ, 46 with EVZ but no spot, and 2,962 pre-2019-10 rows with no prior EUR STR.
+
+## Data quality findings
+
+**FRED encodes missing values as an empty string, not `.`.** A first count with `grep ',\.$'` reported zero missing values; the files actually have 282 (spot), 169 (EVZ) and 97 (SOFR) blanks. The parser maps both `""` and `"."` to NaN and rejects non-numeric text, duplicate dates and unsorted dates.
+
+**The ECB and FRED copies of the EUR STR are identical.** They agree on all 1,827 overlapping dates (max difference 0.0). The row counts differ for two benign reasons, both checked: FRED's mirror has 34 extra rows that are *blank* (TARGET holidays such as 25 and 26 December, 1 January, Easter), and the ECB file has one date the mirror lacks, 2026-11-18, the newest day.
+
+**EVZ has stale prints.** 192 days repeat the previous day's value in the full series. Runs of three or more identical values are not chance at 2-decimal resolution, and they cluster late: days inside such runs (counting each run's first print) are 65 in 2024, 28 in 2021, 16 in 2025, 15 in 2023 and 5 in 2009. Repeats inside those runs are flagged (`evz_stale`): 99 in the full series, **95 in the sample (7.0%)**.
+
+**From 2024 EVZ updates irregularly, and the stale flag does not capture all of it.**
+
+| Year | Mean abs daily change (vol pts) | Days with abs change > 2 |
+|------|-------------------------------:|-------------------------:|
+| 2019 | 0.19 | 0 |
+| 2020 | 0.39 | 7 |
+| 2021 | 0.20 | 0 |
+| 2022 | 0.40 | 5 |
+| 2023 | 0.23 | 0 |
+| 2024 | **0.72** | **26** |
+| 2025 | 0.47 | 4 |
+
+The lag-1 autocorrelation of EVZ changes is -0.43 in 2024. A late-2024 window shows the pattern directly: a value held for days, then a catch-up jump (6.29, then 7.36, then 9.97). I did not isolate the cause (a feed problem on FRED's side is the most likely reading). Practical consequence: 2019-2023 EVZ is far cleaner than 2024-2025, and the 2024 numbers below should be read with that in mind.
+
+## Real-data sanity checks
+
+- Ranges are sensible: EUR/USD 0.9616 to 1.2295; EVZ 4.13 to 19.31 (peak on 2020-03-18); USD rate 0.01% to 5.47%; EUR rate -0.60% to 3.97% (continuously compounded).
+- The EUR STR stays negative until 2022-09-13 and first turns positive on 2022-09-14 (+0.662). The July 2022 hike only moved it from -0.58 to -0.09, because the first move took the ECB deposit rate to 0%.
+- Largest daily moves are real events: 2.2% on 2025-03-05, 1.9% on 2023-12-14, 1.8% on 2020-03-12.
+- Weekend and holiday gaps are as expected (1-day gaps 1,051, weekend 234, long weekend 48).
+- Every rate used is dated 1 to 4 days before its row, never the same day.
+
+## Implied vs realised vol (all real)
+
+EVZ at `t` forecasts the next 30 days, so it is compared with realised vol over the following 21 returns (non-stale days, 1,244 observations):
+
+- Mean EVZ **7.74**, mean forward realised **7.08**: a premium of **+0.66 vol points**; implied exceeds realised on 64% of days.
+- Correlation between EVZ and forward realised vol: **0.55**.
+- Premium by year: 2019 +1.31, 2020 +0.88, 2021 +0.55, 2022 +0.13, 2023 +0.10, **2024 +1.89, 2025 -1.86** (2025 is only about 2.5 months).
+- Before 2024 only: premium **+0.47**, implied above realised on 63% of days. The 2024 figure is the year with the worst EVZ quality, so I would not read +1.89 as a market fact.
+
+Against *trailing* 21-day realised vol, EVZ is higher on 69% of days overall but the share swings from 100% (2019) to 54% (2023) to 22% (2025). An earlier draft of the overview plot said "EVZ is almost always above trailing realised"; that was wrong and the title now states the measured 69%.
+
+Caveat for Stage 5: the premium is measured with noon-to-noon returns from the Fed H.10 series against an index based on options on a USD-listed EUR/USD ETF, not OTC EUR/USD options. It is a reasonable proxy for the variance risk premium, not the premium a dealer's book would earn.
+
+## The assumed layer
+
+- **EVZ to ATM:** the variance-swap-to-ATM ratio of the assumed smile at 30 days is **1.040**, and it barely moves with vol level (1.0396 at 4% vol to 1.0404 at 30%). One factor, **0.9614**, therefore converts EVZ to 1M ATM on every day. It is a property of the assumed RR/BF, not a measurement.
+- **Term structure:** `v(t) = theta + (v0 - theta) exp(-kappa t)` with `theta` = 7.75% squared (sample mean of non-stale EVZ) and `kappa = 2`. Total variance increases with maturity for every input tried (4% to 40% 30-day vol), so the ATM term structure cannot create a calendar break. A 30-day vol below about 0.28 times the long-run level would make forward variance negative; the code rejects it instead of clipping.
+- On a high-vol day the term structure inverts: on 2020-03-18 (EVZ 19.3) ATM runs from about 19% at 1W to about 14% at 1Y. This is the mean-reversion assumption, not an observation.
+- RR and BF are fixed fractions of ATM, so skew and wings widen automatically in high-vol regimes.
+
+## Arbitrage checks on real days (Stage 3 checks, assumed smile)
+
+- Surfaces built for 54 real days (every 25th non-stale day plus the max-EVZ, min-EVZ and largest-move days): **54 of 54 arbitrage-free with Malz, 54 of 54 with Vanna-Volga** (pillars plus one interior maturity per interval, +-4 sd band).
+- That says the assumed RR/BF levels are mild enough not to trouble either model. It does not say the surfaces are right; the smile is assumed.
+
+## Synthetic stress tests (on the real median-EVZ day, 2020-05-28)
+
+| Scenario | Malz | Vanna-Volga |
+|----------|------|-------------|
+| Base day | OK | OK |
+| RR x6 (extreme skew) | OK | **breaks**: butterfly, plus points with no implied vol |
+| BF x6 (extreme butterfly) | OK | **breaks**: butterfly |
+| EVZ 30 (vol spike) | OK | OK |
+| EVZ 4 (vol crush) | OK | OK |
+| 1W ATM = 2.5x 1M (inverted front end) | **breaks**: calendar | **breaks**: calendar |
+
+- Malz survives every smile and level stress; only a term-structure inversion breaks it, and that is the case the `sqrt(T_long/T_short)` rule predicts (2.5 against a threshold of 2.1 for 1W to 1M).
+- Vanna-Volga breaks twice under extreme skew: negative density where it has a vol, and no implied vol at all in other regions. In an earlier run of the 6x-skew case the two butterfly detectors disagreed on 2 of 20 flagged points (the price butterfly flagged 18). That is at g near -25, where the finite-difference steps are the likely culprit; I did not investigate further.
+
+## Stage 4 caveats
+
+- **No real RR or BF anywhere.** Every skew, wing and smile-dependent conclusion rests on the assumed fractions.
+- **Rates are overnight and flat across tenors.** Carry over a one-year option would differ from a term-rate curve.
+- **`long_run_vol` uses the whole sample**, including the future relative to most days. Fine for a data audit; wrong for a backtest.
+- **Timing mismatch** between the noon spot fix and the 4pm EVZ close, and between US and TARGET holiday calendars (handled by the as-of join), is not corrected.
+- **EVZ is an ETF-option index**, not an OTC measure, and its late history is degraded.
+- The 54-day arbitrage sample is a sample, not every day.

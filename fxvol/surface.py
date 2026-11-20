@@ -156,3 +156,26 @@ class SurfaceSlice(Smile):
 
     def vol(self, K):
         return self.surface.vol(K, self.quote.T)
+
+
+def variance_swap_vol(surface: VolSurface, T: float, z_max: float = 10.0, n: int = 4001) -> float:
+    """Model-free variance-swap strike (as a vol) at maturity ``T``, from the surface's own option prices.
+
+        sigma_var^2 * T = 2 exp(rd T) * [ int_{K<F} P(K)/K^2 dK + int_{K>F} C(K)/K^2 dK ]
+
+    with the OTM option at each strike, integrated on ``k = ln(K/F) in +-z_max sqrt(w_atm)``. This is the
+    continuous version of the formula behind VIX-style indices such as CBOE's EVZ, which is why EVZ is closer to a
+    variance-swap level than to ATM vol: it also prices the wings. For a flat smile it returns the flat vol.
+    """
+    from . import gk  # local import: gk does not depend on surface
+
+    rd, rf = surface.rates(T)
+    F = surface.forward(T)
+    half = z_max * np.sqrt(float(surface.total_variance(0.0, T)))
+    k = np.linspace(-half, half, n)
+    K = F * np.exp(k)
+    sigma = np.asarray(surface.vol_k(k, T))
+    otm = gk.price(surface.S, K, T, rd, rf, sigma, k >= 0)
+    integrand = otm / K  # P(K)/K^2 dK = P(K)/K dk
+    var_T = 2.0 * np.exp(rd * T) * np.trapezoid(integrand, k)
+    return float(np.sqrt(var_T / T))

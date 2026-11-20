@@ -7,7 +7,7 @@ name = "fxvol"
 version = "0.1.0"
 description = "FX vol surface construction and Garman-Kohlhagen option pricing"
 requires-python = ">=3.10"
-dependencies = ["numpy", "scipy"]
+dependencies = ["numpy", "scipy", "pandas"]
 
 [project.optional-dependencies]
 dev = ["pytest", "QuantLib", "matplotlib"]

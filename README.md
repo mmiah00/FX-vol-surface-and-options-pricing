@@ -5,7 +5,7 @@ Built a vol surface from the standard market quotes (ATM, 25-delta risk reversal
 ## Setup
 
 ```bash
-pip install -e ".[dev]"   # numpy, scipy, pytest, QuantLib, matplotlib
+pip install -e ".[dev]"   # numpy, scipy, pandas, pytest, QuantLib, matplotlib
 pytest
 ```
 
@@ -79,3 +79,44 @@ print(check_surface(s).summary())
 - `python scripts/surface_demo.py` prints the reports and writes `figures/surface_clean.png`,
   `arb_butterfly.png`, `arb_calendar.png`, `calendar_coordinates.png`. Results are written up in
   [findings.md](findings.md).
+
+
+## Stage 4: data, and which numbers are real
+
+Every quantity in this project is exactly one of **REAL**, **ASSUMED** or **SYNTHETIC**.
+
+| Quantity | Source | Status | Notes |
+|---|---|---|---|
+| EUR/USD spot | FRED `DEXUSEU` (Federal Reserve H.10 noon New York buying rate) | **REAL** | USD per EUR, daily, about 10 blank days a year (US holidays) |
+| USD rate `rd` | FRED `SOFR` | **REAL** (overnight) | Act/360 simple % converted to continuously compounded act/365. Used as-of the previous available date |
+| EUR rate `rf` | ECB `EST` (euro short-term rate) | **REAL** (overnight) | Identical to FRED's mirror of it on all 1,827 overlapping dates (checked). Negative until 2022-09-13 (it first rose to -0.09 on 2022-07-27, and turned positive on 2022-09-14) |
+| 30-day implied vol | FRED `EVZCLS` (CBOE EUR/USD ETF Volatility Index) | **REAL** | A VIX-style index from options on an EUR/USD ETF, so closer to a variance-swap level than to ATM vol. Ends 2025-03-11 on FRED; see data quality below |
+| Rates across tenors | the overnight rates, held flat | **ASSUMED** | No term structure of rates |
+| 1M ATM vol | `EVZ x 0.9614` | **ASSUMED** | The factor makes the model's own 30-day variance-swap vol equal EVZ. Depends on the assumed smile below |
+| ATM term structure | Forward variance mean-reverts to the sample mean EVZ (7.75%), `kappa = 2` per year | **ASSUMED** | Calendar-arbitrage-free by construction; `kappa` is a guess |
+| 25D RR and BF | Fixed fractions of ATM at each pillar (RR -2.9% to -8.9%, BF 2.2% to 4.4% of ATM) | **ASSUMED** | Plausible EUR/USD magnitudes, **not calibrated to any quote**. They scale with the vol regime because they scale with ATM |
+| Stress surfaces (6x skew, 6x butterfly, EVZ 4 and 30, inverted front end) | `fxvol.market.stress_scenarios` on a real day | **SYNTHETIC** | Edge cases; each changes one thing |
+| Quotes in the Stage 1-3 demos and tests | `fxvol/synthetic.py` | **SYNTHETIC** | Illustrative only |
+
+Consequence: spot, rates and the level of vol are real. **Anything about skew or the wings is assumed**, so a result
+that depends on RR or BF reflects the assumption, not the market.
+
+```bash
+python scripts/fetch_data.py                 # downloads data/raw/*.csv + manifest.json (URL, time, SHA-256)
+python -I scripts/build_dataset.py           # data/processed/market_state.csv, audit report, two figures
+```
+
+Raw and processed CSVs are **not committed** (third-party data; `data/raw/manifest.json` is, so downloads can be verified).
+Downloaded files are treated as untrusted: the fetcher only writes them after checking they look like the CSV requested, and
+the build is meant to be run with `python -I`.
+
+Alignment rules (details in `fxvol/data.py`): rows need spot and EVZ on the same date; nothing is forward-filled; rates are
+the latest print **strictly before** each date; spot is a noon fix while EVZ is a close, a mismatch that is not corrected.
+
+Data quality, found while building this (numbers in [findings.md](findings.md)):
+
+- **The usable window is 2019-10-02 to 2025-03-11** (1,352 days): the EUR STR starts 2019-10-01 and EVZ on FRED ends 2025-03-11, although
+  spot and rates run to November 2026. CBOE's own EVZ file returned 403, so the series could not be extended.
+- **EVZ has stale prints** (95 sample days in runs of three or more identical values; flagged in `evz_stale`) and from 2024 it updates
+  irregularly (stale, then jumps). Treat 2024-2025 EVZ with caution.
+- **`long_run_vol` is the full-sample mean of EVZ**, which is look-ahead for any backtest. Use an expanding mean or a fixed value there.
